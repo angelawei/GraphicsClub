@@ -13,104 +13,103 @@
 
 #define STATUS_CASE(enum) case (enum): return #enum
 static const char* get_gl_error_string(GLenum err) {
-  switch(err) {
-    STATUS_CASE(GL_NO_ERROR);
-    STATUS_CASE(GL_INVALID_ENUM);
-    STATUS_CASE(GL_INVALID_OPERATION);
-    STATUS_CASE(GL_INVALID_FRAMEBUFFER_OPERATION);
-    STATUS_CASE(GL_OUT_OF_MEMORY);
-    STATUS_CASE(GL_FRAMEBUFFER_COMPLETE);
-    STATUS_CASE(GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
-    STATUS_CASE(GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
-    STATUS_CASE(GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE);
-    STATUS_CASE(GL_FRAMEBUFFER_UNSUPPORTED);
-  }
-  return NULL;
+	switch(err) {
+		STATUS_CASE(GL_NO_ERROR);
+		STATUS_CASE(GL_INVALID_ENUM);
+		STATUS_CASE(GL_INVALID_OPERATION);
+		STATUS_CASE(GL_INVALID_FRAMEBUFFER_OPERATION);
+		STATUS_CASE(GL_OUT_OF_MEMORY);
+		STATUS_CASE(GL_FRAMEBUFFER_COMPLETE);
+		STATUS_CASE(GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+		STATUS_CASE(GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
+		STATUS_CASE(GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE);
+		STATUS_CASE(GL_FRAMEBUFFER_UNSUPPORTED);
+	}
+	return NULL;
 }
 
 #define COLORED 0
 
 static GLuint gl_create_shader_program(const char* vertex_shader_src, const char* geometry_shader_src, const char* fragment_shader_src)
 {
-    GLuint program = glCreateProgram();
+	GLuint program = glCreateProgram();
 
-    GLchar log[500];
-    GLsizei log_length;
+	GLchar log[500];
+	GLsizei log_length;
 
-  if (vertex_shader_src) {
-    GLint did_vertex_shader_compile = GL_FALSE;
-    GLuint vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &vertex_shader_src, NULL);
-    glCompileShader(vertex_shader);
+	if (vertex_shader_src) {
+		GLint did_vertex_shader_compile = GL_FALSE;
+		GLuint vertex_shader = glCreateShader(GL_VERTEX_SHADER);
+		glShaderSource(vertex_shader, 1, &vertex_shader_src, NULL);
+		glCompileShader(vertex_shader);
 
-    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &did_vertex_shader_compile);
-    if (did_vertex_shader_compile == GL_FALSE) {
-      glGetShaderInfoLog(vertex_shader, sizeof(log), &log_length, log);
-      printf("vertex shader log:\n%s\n", log);
-      glDeleteShader(vertex_shader);
-      glDeleteProgram(program);
-      return (0);
-    }
+		glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &did_vertex_shader_compile);
+		if (did_vertex_shader_compile == GL_FALSE) {
+			glGetShaderInfoLog(vertex_shader, sizeof(log), &log_length, log);
+			printf("vertex shader log:\n%s\n", log);
+			glDeleteShader(vertex_shader);
+			glDeleteProgram(program);
+			return (0);
+		}
 
-    glAttachShader(program, vertex_shader);
-    glDeleteShader(vertex_shader);
-  }
+		glAttachShader(program, vertex_shader);
+		glDeleteShader(vertex_shader);
+	}
 
-  if (geometry_shader_src) {
-    GLint did_geometry_shader_compile = GL_FALSE;
-    GLuint geometry_shader = glCreateShader(GL_GEOMETRY_SHADER);
-    glShaderSource(geometry_shader, 1, &geometry_shader_src, NULL);
-    glCompileShader(geometry_shader);
+	if (geometry_shader_src) {
+		GLint did_geometry_shader_compile = GL_FALSE;
+		GLuint geometry_shader = glCreateShader(GL_GEOMETRY_SHADER);
+		glShaderSource(geometry_shader, 1, &geometry_shader_src, NULL);
+		glCompileShader(geometry_shader);
 
 
-    glGetShaderiv(geometry_shader, GL_COMPILE_STATUS, &did_geometry_shader_compile);
-    if (did_geometry_shader_compile == GL_FALSE) {
-      glGetShaderInfoLog(geometry_shader, sizeof(log), &log_length, log);
-      printf("geometry shader log:\n%s\n", log);
-      glDeleteShader(geometry_shader);
-      glDeleteProgram(program);
-      return (0);
-    }
+		glGetShaderiv(geometry_shader, GL_COMPILE_STATUS, &did_geometry_shader_compile);
+		if (did_geometry_shader_compile == GL_FALSE) {
+			glGetShaderInfoLog(geometry_shader, sizeof(log), &log_length, log);
+			printf("geometry shader log:\n%s\n", log);
+			glDeleteShader(geometry_shader);
+			glDeleteProgram(program);
+			return (0);
+		}
 
-    // printf("attaching the following geometry shader\n%s", geometry_shader_src);
-    glAttachShader(program, geometry_shader);
-    glDeleteShader(geometry_shader);
-  }
+		glAttachShader(program, geometry_shader);
+		glDeleteShader(geometry_shader);
+	}
 
-  if (fragment_shader_src) {
-    GLint did_fragment_shader_compile = GL_FALSE;
-    GLuint fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, &fragment_shader_src, NULL);
-    glCompileShader(fragment_shader);
+	if (fragment_shader_src) {
+		GLint did_fragment_shader_compile = GL_FALSE;
+		GLuint fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
+		glShaderSource(fragment_shader, 1, &fragment_shader_src, NULL);
+		glCompileShader(fragment_shader);
 
-    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &did_fragment_shader_compile);
-    if (did_fragment_shader_compile == GL_FALSE) {
-      glGetShaderInfoLog(fragment_shader, sizeof(log), &log_length, log);
-      printf("fragment shader log:\n%s\n", log);
-      glDeleteShader(fragment_shader);
-      glDeleteProgram(program);
-      return (0);
-    }
+		glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &did_fragment_shader_compile);
+		if (did_fragment_shader_compile == GL_FALSE) {
+			glGetShaderInfoLog(fragment_shader, sizeof(log), &log_length, log);
+			printf("fragment shader log:\n%s\n", log);
+			glDeleteShader(fragment_shader);
+			glDeleteProgram(program);
+			return (0);
+		}
 
-    glAttachShader(program, fragment_shader);
-    glDeleteShader(fragment_shader);
-  }
+		glAttachShader(program, fragment_shader);
+		glDeleteShader(fragment_shader);
+	}
 
-    glLinkProgram(program);
+	glLinkProgram(program);
 
-    GLint did_program_link = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &did_program_link);
-    if (did_program_link == GL_FALSE) {
-        glGetProgramInfoLog(program, sizeof(log), &log_length, log);
-        printf("program log:\n%s\n", log);
-        glDeleteProgram(program);
-        return (0);
-    }
+	GLint did_program_link = GL_FALSE;
+	glGetProgramiv(program, GL_LINK_STATUS, &did_program_link);
+	if (did_program_link == GL_FALSE) {
+		glGetProgramInfoLog(program, sizeof(log), &log_length, log);
+		printf("program log:\n%s\n", log);
+		glDeleteProgram(program);
+		return (0);
+	}
 
-    glUseProgram(program);
-    glUseProgram(0);
+	glUseProgram(program);
+	glUseProgram(0);
 
-    return (program);
+	return (program);
 }
 
 std::vector<tinyobj::shape_t> shapes;
@@ -341,85 +340,85 @@ void ao_init(ao_memory_t* mem)
 	/* opaque shader program */
 
     char* solid_vertex_shader_src = (char*)R"(
-        #version 410
-        uniform mat4 u_matrix;
-        uniform mat4 u_mv_matrix;
-        uniform mat4 u_normal_matrix;
-        layout (location = 0) in vec3 a_position;
-        layout (location = 1) in vec3 a_normal;
-        layout (location = 2) in vec2 a_uv_coord;
+		#version 410
+		uniform mat4 u_matrix;
+		uniform mat4 u_mv_matrix;
+		uniform mat4 u_normal_matrix;
+		layout (location = 0) in vec3 a_position;
+		layout (location = 1) in vec3 a_normal;
+		layout (location = 2) in vec2 a_uv_coord;
 
-        out VS_OUT {
-          vec3 position;
-          vec3 normal;
-          vec2 uv_coord;
-        } vs_out;
+		out VS_OUT {
+			vec3 position;
+			vec3 normal;
+			vec2 uv_coord;
+		} vs_out;
 
-        void main()
-        {
-          vs_out.position = (u_mv_matrix * vec4(a_position, 1.0)).xyz;
-          vs_out.normal = (u_normal_matrix * vec4(a_normal, 0.0)).xyz;
-          vs_out.uv_coord = a_uv_coord;
-          gl_Position = u_matrix * vec4(a_position, 1.0);
-        }
+		void main()
+		{
+			vs_out.position = (u_mv_matrix * vec4(a_position, 1.0)).xyz;
+			vs_out.normal = (u_normal_matrix * vec4(a_normal, 0.0)).xyz;
+			vs_out.uv_coord = a_uv_coord;
+			gl_Position = u_matrix * vec4(a_position, 1.0);
+		}
     )";
 
     char* solid_geometry_shader_src = (char*)R"(
-      #version 410
-      layout(invocations = 2, triangles) in;
-      layout(triangle_strip, max_vertices = 3) out;
+		#version 410
+		layout(invocations = 2, triangles) in;
+		layout(triangle_strip, max_vertices = 3) out;
 
-      in VS_OUT {
-        vec3 position;
-        vec3 normal;
-        vec2 uv_coord;
-      } gs_in[];
+		in VS_OUT {
+			vec3 position;
+			vec3 normal;
+			vec2 uv_coord;
+		} gs_in[];
 
-      out vec3 v_position;
-      out vec3 v_normal;
-      out vec2 v_uv_coord;
-      out float v_layer;
+		out vec3 v_position;
+		out vec3 v_normal;
+		out vec2 v_uv_coord;
+		out float v_layer;
 
-      void main()
-      {
-        gl_Layer = gl_InvocationID;
-        v_layer = float(gl_InvocationID);
-        for (int i = 0; i < 3; ++i) {
-          v_position = gs_in[i].position;
-          v_normal = gs_in[i].normal;
-          v_uv_coord = gs_in[i].uv_coord;
-          gl_Position = gl_in[i].gl_Position;
-          EmitVertex();
-        }
-        EndPrimitive();
-      }
+		void main()
+		{
+			gl_Layer = gl_InvocationID;
+			v_layer = float(gl_InvocationID);
+			for (int i = 0; i < 3; ++i) {
+			v_position = gs_in[i].position;
+			v_normal = gs_in[i].normal;
+			v_uv_coord = gs_in[i].uv_coord;
+			gl_Position = gl_in[i].gl_Position;
+			EmitVertex();
+			}
+			EndPrimitive();
+		}
     )";
 
     char* solid_fragment_shader_src = (char*)R"(
-        #version 410
-        in vec3 v_position;
-        in vec3 v_normal;
-        in vec2 v_uv_coord;
-        in float v_layer;
-        layout (location = 0) out vec4 output_normal;
-        layout (location = 1) out vec4 output_color;
-        uniform vec3 u_color;
-        uniform bool u_texture_assigned_color;
-        uniform sampler2D u_texture_sampler;
-        void main()
+		#version 410
+		in vec3 v_position;
+		in vec3 v_normal;
+		in vec2 v_uv_coord;
+		in float v_layer;
+		layout (location = 0) out vec4 output_normal;
+		layout (location = 1) out vec4 output_color;
+		uniform vec3 u_color;
+		uniform bool u_texture_assigned_color;
+		uniform sampler2D u_texture_sampler;
+		void main()
 		{
-            if (v_layer == 0.0) {
-                // output_normal = vec4(v_position, 1.0);
-                output_normal = vec4(normalize(v_normal), 1.0);
-                vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
-                output_color = vec4(color, 1.0);
-            } else {
-                if (false) discard;
-                output_normal = vec4(-normalize(v_normal), 1.0);
-                vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
-                output_color = vec4(color, 1.0);
-            }
-        }
+			if (v_layer == 0.0) {
+				// output_normal = vec4(v_position, 1.0);
+				output_normal = vec4(normalize(v_normal), 1.0);
+				vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
+				output_color = vec4(color, 1.0);
+			} else {
+				if (false) discard;
+				output_normal = vec4(-normalize(v_normal), 1.0);
+				vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
+				output_color = vec4(color, 1.0);
+			}
+		}
     )";
 
 	GLuint solid_program = gl_create_shader_program(solid_vertex_shader_src, solid_geometry_shader_src, solid_fragment_shader_src);
@@ -478,7 +477,7 @@ void ao_init(ao_memory_t* mem)
             vec3 position0 = farPlaneViewSpace.xyz * depthLinear0;
             vec3 position1 = farPlaneViewSpace.xyz * depthLinear1;
 
-            output_color = vec4(normal1, 1.0);
+			output_color = vec4(normal1, 1.0);
         }
     )";
     GLuint ao_program = gl_create_shader_program(ao_vertex_shader_src, NULL, ao_fragment_shader_src);
