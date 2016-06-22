@@ -67,6 +67,8 @@ typedef struct {
 } device_mesh_t;
 
 typedef struct {
+    GLuint fb;
+    GLuint depthTexture;
     GLuint normalTexture;
     GLuint colorTexture;
 } gbuffer_t;
@@ -79,9 +81,7 @@ typedef struct {
     int32_t window_height;
 
 
-    GLuint gbuffer_fb;
-    gbuffer_t gbuffer0;
-    gbuffer_t gbuffer1;
+    gbuffer_t gbuffer;
     GLuint gbuffer_program;
     GLint mesh_uniform_matrix_location;
     GLint mesh_uniform_mv_matrix_location;
@@ -90,10 +90,9 @@ typedef struct {
     GLint mesh_uniform_texture_assigned_color_location;
     GLint mesh_uniform_texture_sampler_location;
     GLuint ao_program;
-    GLint ao_uniform_normal_texture_sampler0_location;
-    GLint ao_uniform_color_texture_sampler0_location;
-    GLint ao_uniform_normal_texture_sampler1_location;
-    GLint ao_uniform_color_texture_sampler1_location;
+    GLint ao_uniform_depth_texture_sampler_location;
+    GLint ao_uniform_normal_texture_sampler_location;
+    GLint ao_uniform_color_texture_sampler_location;
     GLint uniform_inverse_viewport_resolution_location;
     GLint uniform_inverse_projection_matrix_location;
 
