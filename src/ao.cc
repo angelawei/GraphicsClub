@@ -72,7 +72,7 @@ static GLuint gl_create_shader_program(const char* vertex_shader_src, const char
       return (0);
     }
 
-    printf("attaching the following geometry shader\n%s", geometry_shader_src);
+    // printf("attaching the following geometry shader\n%s", geometry_shader_src);
     glAttachShader(program, geometry_shader);
     glDeleteShader(geometry_shader);
   }
@@ -136,9 +136,6 @@ device_mesh_t uploadMesh(const mesh_t & mesh) {
             &mesh.vertices[0], GL_STATIC_DRAW);
     glVertexAttribPointer(mesh_attributes::POSITION, 3, GL_FLOAT, GL_FALSE,0,0);
     glEnableVertexAttribArray(mesh_attributes::POSITION);
-    //cout << mesh.vertices.size() << " verts:" << endl;
-    //for(int i = 0; i < mesh.vertices.size(); ++i)
-    //    cout << "    " << mesh.vertices[i][0] << ", " << mesh.vertices[i][1] << ", " << mesh.vertices[i][2] << endl;
 
     //Upload normal data
     glBindBuffer(GL_ARRAY_BUFFER, out.vbo_normals);
@@ -146,9 +143,6 @@ device_mesh_t uploadMesh(const mesh_t & mesh) {
             &mesh.normals[0], GL_STATIC_DRAW);
     glVertexAttribPointer(mesh_attributes::NORMAL, 3, GL_FLOAT, GL_FALSE,0,0);
     glEnableVertexAttribArray(mesh_attributes::NORMAL);
-    //cout << mesh.normals.size() << " norms:" << endl;
-    //for(int i = 0; i < mesh.normals.size(); ++i)
-    //    cout << "    " << mesh.normals[i][0] << ", " << mesh.normals[i][1] << ", " << mesh.normals[i][2] << endl;
 
     //Upload texture coord data
     glBindBuffer(GL_ARRAY_BUFFER, out.vbo_texcoords);
@@ -156,9 +150,6 @@ device_mesh_t uploadMesh(const mesh_t & mesh) {
             &mesh.texcoords[0], GL_STATIC_DRAW);
     glVertexAttribPointer(mesh_attributes::TEXCOORD, 2, GL_FLOAT, GL_FALSE,0,0);
     glEnableVertexAttribArray(mesh_attributes::TEXCOORD);
-    //cout << mesh.texcoords.size() << " texcos:" << endl;
-    //for(int i = 0; i < mesh.texcoords.size(); ++i)
-    //    cout << "    " << mesh.texcoords[i][0] << ", " << mesh.texcoords[i][1] << endl;
 
     //indices
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, out.vbo_indices);
@@ -310,15 +301,27 @@ void setupGbuffer(gbuffer_t *gbuffer, int32_t w, int32_t h) {
 
     glGenTextures(1, &gbuffer->depthTexture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, gbuffer->depthTexture);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB32F, w, h, 2, 0, GL_RGBA, GL_FLOAT, 0);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT, w, h, 2, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
 
     glGenTextures(1, &gbuffer->normalTexture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, gbuffer->normalTexture);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB32F, w, h, 2, 0, GL_RGBA, GL_FLOAT, 0);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA32F, w, h, 2, 0, GL_RGBA, GL_FLOAT, 0);
 
     glGenTextures(1, &gbuffer->colorTexture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, gbuffer->colorTexture);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB32F, w, h, 2, 0, GL_RGBA, GL_FLOAT, 0);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA32F, w, h, 2, 0, GL_RGBA, GL_FLOAT, 0);
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
@@ -326,6 +329,7 @@ void setupGbuffer(gbuffer_t *gbuffer, int32_t w, int32_t h) {
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, gbuffer->normalTexture, 0);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, gbuffer->colorTexture, 0);
 
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -362,7 +366,7 @@ void ao_init(ao_memory_t* mem)
 
     char* solid_geometry_shader_src = (char*)R"(
       #version 410
-      layout(triangles) in;
+      layout(invocations = 2, triangles) in;
       layout(triangle_strip, max_vertices = 3) out;
 
       in VS_OUT {
@@ -378,18 +382,16 @@ void ao_init(ao_memory_t* mem)
 
       void main()
       {
-        for(int layer = 0; layer < 2; ++layer) {
-            gl_Layer = layer;
-            v_layer = float(layer);
-            for (int i = 0; i < 3; ++i) {
-              v_position = gs_in[i].position;
-              v_normal = gs_in[i].normal;
-              v_uv_coord = gs_in[i].uv_coord;
-              gl_Position = gl_in[i].gl_Position;
-              EmitVertex();
-            }
-            EndPrimitive();
+        gl_Layer = gl_InvocationID;
+        v_layer = float(gl_InvocationID);
+        for (int i = 0; i < 3; ++i) {
+          v_position = gs_in[i].position;
+          v_normal = gs_in[i].normal;
+          v_uv_coord = gs_in[i].uv_coord;
+          gl_Position = gl_in[i].gl_Position;
+          EmitVertex();
         }
+        EndPrimitive();
       }
     )";
 
@@ -476,7 +478,7 @@ void ao_init(ao_memory_t* mem)
             vec3 position0 = farPlaneViewSpace.xyz * depthLinear0;
             vec3 position1 = farPlaneViewSpace.xyz * depthLinear1;
 
-            output_color = vec4(normal0, 1.0);
+            output_color = vec4(normal1, 1.0);
         }
     )";
     GLuint ao_program = gl_create_shader_program(ao_vertex_shader_src, NULL, ao_fragment_shader_src);
@@ -638,11 +640,11 @@ void ao_update_frame(ao_memory_t* mem)
     cam.adjust(0.01f);
 
     glBindFramebuffer(GL_FRAMEBUFFER, mem->gbuffer.fb);
+
     glEnable(GL_DEPTH_TEST);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     draw_mesh(mem);
-    assert(glGetError() == GL_NO_ERROR);
 
     glDisable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
