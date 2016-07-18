@@ -28,8 +28,6 @@ static const char* get_gl_error_string(GLenum err) {
   return NULL;
 }
 
-#define COLORED 0
-
 static GLuint gl_create_shader_program(const char* vertex_shader_src, const char* geometry_shader_src, const char* fragment_shader_src)
 {
     GLuint program = glCreateProgram();
@@ -161,31 +159,31 @@ device_mesh_t uploadMesh(const mesh_t & mesh) {
 
 
     out.texname = mesh.texname;
-    // if (!mesh.texname.empty()) {
-    //     GLint texture_width;
-    //     GLint texture_height;
-    //     GLint texture_channels;
-    //     loaded_file_t file = platform_load_file(("crytek-sponza/" + mesh.texname).c_str());
-    //     uint8_t* texture_data = stbi_load_from_memory((uint8_t*)file.contents, file.size, &texture_width, &texture_height, &texture_channels, 0);
-    //     assert(texture_width > 0 && texture_height > 0 && texture_data != NULL);
+    if (!mesh.texname.empty()) {
+        GLint texture_width;
+        GLint texture_height;
+        GLint texture_channels;
+        loaded_file_t file = platform_load_file(("crytek-sponza/" + mesh.texname).c_str());
+        uint8_t* texture_data = stbi_load_from_memory((uint8_t*)file.contents, file.size, &texture_width, &texture_height, &texture_channels, 0);
+        assert(texture_width > 0 && texture_height > 0 && texture_data != NULL);
 
-    //     glGenTextures(1, &(out.texture));
-    //     glBindTexture(GL_TEXTURE_2D, out.texture);
+        glGenTextures(1, &(out.texture));
+        glBindTexture(GL_TEXTURE_2D, out.texture);
 
-    //     GLint format = texture_channels < 4 ? GL_RGB : GL_RGBA;
-    //     glTexImage2D(GL_TEXTURE_2D, 0, format, texture_width, texture_height, 0, format, GL_UNSIGNED_BYTE, texture_data);
-    //     glGenerateMipmap(GL_TEXTURE_2D);
-    //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    //     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        GLint format = texture_channels < 4 ? GL_RGB : GL_RGBA;
+        glTexImage2D(GL_TEXTURE_2D, 0, format, texture_width, texture_height, 0, format, GL_UNSIGNED_BYTE, texture_data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 
-    //     glBindTexture(GL_TEXTURE_2D, 0);
-    //     free(file.contents);
-    //     file.contents = NULL;
-    //     free(texture_data);
-    //     texture_data = NULL;
-    // }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        free(file.contents);
+        file.contents = NULL;
+        free(texture_data);
+        texture_data = NULL;
+    }
 
     out.color = mesh.color;
     return out;
@@ -307,6 +305,14 @@ void setupGbuffer(gbuffer_t *gbuffer, int32_t w, int32_t h) {
     glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT, w, h, 2, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
 
+    glGenTextures(1, &gbuffer->depthTextureBack);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, gbuffer->depthTextureBack);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT, w, h, 2, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+
     glGenTextures(1, &gbuffer->normalTexture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, gbuffer->normalTexture);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -333,6 +339,20 @@ void setupGbuffer(gbuffer_t *gbuffer, int32_t w, int32_t h) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void swapDepthTextures(gbuffer_t *gbuffer) {
+    /* scene depth and framebuffer setup */
+    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer->fb);
+
+    GLuint depthTextureTmp = gbuffer->depthTextureBack;
+    gbuffer->depthTextureBack = gbuffer->depthTexture;
+    gbuffer->depthTexture = depthTextureTmp;
+
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, gbuffer->depthTexture, 0);
+
+    assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void ao_init(ao_memory_t* mem)
 {
     assert(mem != NULL);
@@ -344,6 +364,7 @@ void ao_init(ao_memory_t* mem)
         #version 410
         uniform mat4 u_matrix;
         uniform mat4 u_mv_matrix;
+        uniform mat4 u_mv_matrix_back;
         uniform mat4 u_normal_matrix;
         layout (location = 0) in vec3 a_position;
         layout (location = 1) in vec3 a_normal;
@@ -351,6 +372,7 @@ void ao_init(ao_memory_t* mem)
 
         out VS_OUT {
           vec3 position;
+          vec3 position_back;
           vec3 normal;
           vec2 uv_coord;
         } vs_out;
@@ -358,6 +380,7 @@ void ao_init(ao_memory_t* mem)
         void main()
         {
           vs_out.position = (u_mv_matrix * vec4(a_position, 1.0)).xyz;
+          vs_out.position_back = (u_mv_matrix_back * vec4(a_position, 1.0)).xyz;
           vs_out.normal = (u_normal_matrix * vec4(a_normal, 0.0)).xyz;
           vs_out.uv_coord = a_uv_coord;
           gl_Position = u_matrix * vec4(a_position, 1.0);
@@ -371,11 +394,13 @@ void ao_init(ao_memory_t* mem)
 
       in VS_OUT {
         vec3 position;
+        vec3 position_back;
         vec3 normal;
         vec2 uv_coord;
       } gs_in[];
 
       out vec3 v_position;
+      out vec3 v_position_back;
       out vec3 v_normal;
       out vec2 v_uv_coord;
       out float v_layer;
@@ -386,6 +411,7 @@ void ao_init(ao_memory_t* mem)
         v_layer = float(gl_InvocationID);
         for (int i = 0; i < 3; ++i) {
           v_position = gs_in[i].position;
+          v_position_back = gs_in[i].position_back;
           v_normal = gs_in[i].normal;
           v_uv_coord = gs_in[i].uv_coord;
           gl_Position = gl_in[i].gl_Position;
@@ -398,6 +424,7 @@ void ao_init(ao_memory_t* mem)
     char* solid_fragment_shader_src = (char*)R"(
         #version 410
         in vec3 v_position;
+        in vec3 v_position_back;
         in vec3 v_normal;
         in vec2 v_uv_coord;
         in float v_layer;
@@ -406,19 +433,54 @@ void ao_init(ao_memory_t* mem)
         uniform vec3 u_color;
         uniform bool u_texture_assigned_color;
         uniform sampler2D u_texture_sampler;
+        uniform sampler2DArray u_depth_texture_back_sampler;
+        uniform mat4 u_projection_matrix;
+
+        float linearizeDepth(float exp_depth, float near, float far) {
+            return  (2 * near) / (far + near - (exp_depth*2.0-1.0) * (far - near));
+        }
+
+        vec2 getSSPositionChange(vec3 csPosition, vec3 csPrevPosition, mat4 projectToScreenMatrix) {
+            vec4 temp = projectToScreenMatrix * vec4(csPrevPosition, 1.0);
+
+            // gl_FragCoord.xy has already been rounded to a pixel center, so regenerate the true projected position.
+            // This is needed to generate correct velocity vectors in the presence of Projection::pixelOffset
+            vec4 temp2 = projectToScreenMatrix * vec4(csPosition, 1.0);
+
+            // We want the precision of division here and intentionally do not convert to multiplying by an inverse.
+            // Expressing the two divisions as a single vector division operation seems to prevent the compiler from
+            // computing them at different precisions, which gives non-zero velocity for static objects in some cases.
+            vec4 ssPositions = vec4(temp.xy, temp2.xy) / vec4(temp.ww, temp2.ww);
+
+            return ssPositions.zw - ssPositions.xy;
+        }
+
+        // z_t−1 > Z_t−1[0][x_t−1, y_t−1] + z_minSep
+        bool isInFrontOfSecondLayer(in vec2 ssV, in float minZGap, in float prevZ) {
+            vec2 prevSSC = gl_FragCoord.xy - ssV;
+            ivec3 C = ivec3(prevSSC, 0);
+            float depthBack = texelFetch(u_depth_texture_back_sampler, C, 0).x;
+            float depthBackLinear = linearizeDepth(depthBack, 0.1, 100.0);
+
+            return -prevZ <= depthBackLinear * 100.0 + minZGap;
+        }
+
         void main()
 		{
-            if (v_layer == 0.0) {
-                // output_normal = vec4(v_position, 1.0);
-                output_normal = vec4(normalize(v_normal), 1.0);
-                vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
-                output_color = vec4(color, 1.0);
-            } else {
-                if (false) discard;
-                output_normal = vec4(-normalize(v_normal), 1.0);
-                vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
-                output_color = vec4(color, 1.0);
+            vec2 ssPositionChange = getSSPositionChange(v_position, v_position_back, u_projection_matrix);
+            if (v_layer != 0.0 && isInFrontOfSecondLayer(ssPositionChange, 0.5, v_position_back.z)) {
+                discard;
             }
+
+            // output_normal = vec4(v_position, 1.0);
+            // if (v_layer != 0.0) {
+            //     output_normal = vec4(ssPositionChange, 0.0, 1.0);
+            // } else {
+                output_normal = vec4(normalize(v_normal), 1.0);
+            // }
+            vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
+            output_color = vec4(color, 1.0);
+            // discard;
         }
     )";
 
@@ -429,6 +491,8 @@ void ao_init(ao_memory_t* mem)
 	assert(mesh_matrix_location >= 0);
     GLint mesh_mv_matrix_location = glGetUniformLocation(solid_program, "u_mv_matrix");
     assert(mesh_mv_matrix_location >= 0);
+    GLint mesh_mv_matrix_back_location = glGetUniformLocation(solid_program, "u_mv_matrix_back");
+    assert(mesh_mv_matrix_back_location >= 0);
     GLint mesh_normal_matrix_location = glGetUniformLocation(solid_program, "u_normal_matrix");
     assert(mesh_normal_matrix_location >= 0);
     GLint mesh_color_location = glGetUniformLocation(solid_program, "u_color");
@@ -438,6 +502,10 @@ void ao_init(ao_memory_t* mem)
     GLint mesh_texture_sampler_location = glGetUniformLocation(solid_program, "u_texture_sampler");
     assert(mesh_texture_sampler_location >= 0);
 
+    GLint gbuffer_depth_texture_back_sampler_location = glGetUniformLocation(solid_program, "u_depth_texture_back_sampler");
+    assert(gbuffer_depth_texture_back_sampler_location >= 0);
+    GLint gbuffer_projection_matrix_location = glGetUniformLocation(solid_program, "u_projection_matrix");
+    assert(gbuffer_projection_matrix_location >= 0);
 
     char* ao_vertex_shader_src = (char*)""
         "#version 410\n"
@@ -478,7 +546,7 @@ void ao_init(ao_memory_t* mem)
             vec3 position0 = farPlaneViewSpace.xyz * depthLinear0;
             vec3 position1 = farPlaneViewSpace.xyz * depthLinear1;
 
-            output_color = vec4(normal1, 1.0);
+            output_color = vec4(color1, 1.0);
         }
     )";
     GLuint ao_program = gl_create_shader_program(ao_vertex_shader_src, NULL, ao_fragment_shader_src);
@@ -491,10 +559,10 @@ void ao_init(ao_memory_t* mem)
     GLint ao_color_texture_sampler_location = glGetUniformLocation(ao_program, "u_color_texture_sampler");
     assert(ao_color_texture_sampler_location >= 0);
 
-    GLint inverse_viewport_resolution_location = glGetUniformLocation(ao_program, "u_inverse_viewport_resolution");
-    assert(inverse_viewport_resolution_location >= 0);
-    GLint inverse_projection_matrix_location = glGetUniformLocation(ao_program, "u_inverse_projection_matrix");
-    assert(inverse_projection_matrix_location >= 0);
+    GLint ao_inverse_viewport_resolution_location = glGetUniformLocation(ao_program, "u_inverse_viewport_resolution");
+    assert(ao_inverse_viewport_resolution_location >= 0);
+    GLint ao_inverse_projection_matrix_location = glGetUniformLocation(ao_program, "u_inverse_projection_matrix");
+    assert(ao_inverse_projection_matrix_location >= 0);
     std::cout << "SHADERS COMPILED" << std::endl;
 
 
@@ -536,22 +604,26 @@ void ao_init(ao_memory_t* mem)
 
 
 	/* store init variables in mem */
-	mem->frame = 0;
-	mem->plane_vao = plane_vao;
-	mem->plane_vbo = plane_vbo;
+    mem->frame = 0;
 	mem->gbuffer_program = solid_program;
     mem->mesh_uniform_matrix_location = mesh_matrix_location;
     mem->mesh_uniform_mv_matrix_location = mesh_mv_matrix_location;
+    mem->mesh_uniform_mv_matrix_back_location = mesh_mv_matrix_back_location;
     mem->mesh_uniform_normal_matrix_location = mesh_normal_matrix_location;
     mem->mesh_uniform_color_location = mesh_color_location;
 	mem->mesh_uniform_texture_assigned_color_location = mesh_texture_assigned_color_location;
-	mem->mesh_uniform_texture_sampler_location = mesh_texture_sampler_location;
+    mem->mesh_uniform_texture_sampler_location = mesh_texture_sampler_location;
+	mem->gbuffer_uniform_depth_texture_back_sampler_location = gbuffer_depth_texture_back_sampler_location;
+    mem->gbuffer_uniform_projection_matrix_location = gbuffer_projection_matrix_location;
+
+    mem->plane_vao = plane_vao;
+    mem->plane_vbo = plane_vbo;
     mem->ao_program = ao_program;
     mem->ao_uniform_depth_texture_sampler_location = ao_depth_texture_sampler_location;
     mem->ao_uniform_normal_texture_sampler_location = ao_normal_texture_sampler_location;
     mem->ao_uniform_color_texture_sampler_location = ao_color_texture_sampler_location;
-    mem->uniform_inverse_viewport_resolution_location = inverse_viewport_resolution_location;
-    mem->uniform_inverse_projection_matrix_location = inverse_projection_matrix_location;
+    mem->ao_uniform_inverse_viewport_resolution_location = ao_inverse_viewport_resolution_location;
+    mem->ao_uniform_inverse_projection_matrix_location = ao_inverse_projection_matrix_location;
 
 	assert(glGetError() == GL_NO_ERROR);
 }
@@ -582,25 +654,32 @@ void draw_mesh(ao_memory_t* mem) {
     glUniformMatrix4fv(mem->mesh_uniform_matrix_location, 1, GL_FALSE, &mvp_matrix[0][0]);
     glUniformMatrix4fv(mem->mesh_uniform_mv_matrix_location, 1, GL_FALSE, &mv_matrix[0][0]);
     glUniformMatrix4fv(mem->mesh_uniform_normal_matrix_location, 1, GL_FALSE, &inverse_transposed[0][0]);
+    glUniformMatrix4fv(mem->gbuffer_uniform_projection_matrix_location, 1, GL_FALSE, &persp[0][0]);
 
-    glUniform1i(mem->mesh_uniform_texture_sampler_location, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, mem->gbuffer.depthTextureBack);
+    glUniform1i(mem->gbuffer_uniform_depth_texture_back_sampler_location, 1);
+
     glActiveTexture(GL_TEXTURE0);
+    glUniform1i(mem->mesh_uniform_texture_sampler_location, 0);
 
     GLenum draw_buffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
     glDrawBuffers(2, draw_buffers);
 
     for(unsigned int i=0; i<draw_meshes.size(); i++){
-        // glBindTexture(GL_TEXTURE_2D, draw_meshes[i].texture);
+        glBindTexture(GL_TEXTURE_2D, draw_meshes[i].texture);
         glUniform3fv(mem->mesh_uniform_color_location, 1, &(draw_meshes[i].color[0]));
-        glUniform1i(mem->mesh_uniform_texture_assigned_color_location, false);//!draw_meshes[i].texname.empty());
+        glUniform1i(mem->mesh_uniform_texture_assigned_color_location, !draw_meshes[i].texname.empty());
 
         glBindVertexArray(draw_meshes[i].vertex_array);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, draw_meshes[i].vbo_indices);
         glDrawElements(GL_TRIANGLES, draw_meshes[i].num_indices, GL_UNSIGNED_SHORT,0);
     }
-
     glBindVertexArray(0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,0);
+
+    glUniformMatrix4fv(mem->mesh_uniform_mv_matrix_back_location, 1, GL_FALSE, &mv_matrix[0][0]);
+
     glBindTexture(GL_TEXTURE_2D, 0);
     glUseProgram(0);
 }
@@ -608,9 +687,9 @@ void draw_mesh(ao_memory_t* mem) {
 void draw_plane(ao_memory_t* mem) {
     glUseProgram(mem->ao_program);
 
-    glUniform2f(mem->uniform_inverse_viewport_resolution_location, 1.0 / mem->window_width, 1.0 / mem->window_height);
+    glUniform2f(mem->ao_uniform_inverse_viewport_resolution_location, 1.0 / mem->window_width, 1.0 / mem->window_height);
     glm::mat4 inversePersp = glm::inverse(glm::perspective(45.0f,(float)mem->window_width/(float)mem->window_height,NEARP,FARP));
-    glUniformMatrix4fv(mem->uniform_inverse_projection_matrix_location, 1, GL_FALSE, &inversePersp[0][0]);
+    glUniformMatrix4fv(mem->ao_uniform_inverse_projection_matrix_location, 1, GL_FALSE, &inversePersp[0][0]);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, mem->gbuffer.depthTexture);
@@ -641,10 +720,34 @@ void ao_update_frame(ao_memory_t* mem)
 
     glBindFramebuffer(GL_FRAMEBUFFER, mem->gbuffer.fb);
 
-    glEnable(GL_DEPTH_TEST);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, mem->gbuffer.depthTexture, 0, 0);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, mem->gbuffer.normalTexture, 0, 0);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, mem->gbuffer.colorTexture, 0, 0);
+
+    // float scene_texture_clear[4] = {0.55f, 0.65f, 0.85f, 1.0f};
+    // glClearBufferfv(GL_COLOR, 0, scene_texture_clear);
+    glClearColor(0.55f, 0.65f, 0.85f, 1.0f);
+    glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, mem->gbuffer.depthTexture, 0, 1);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, mem->gbuffer.normalTexture, 0, 1);
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, mem->gbuffer.colorTexture, 0, 1);
+
+    // float scene_texture_clear[4] = {0.55f, 0.65f, 0.85f, 1.0f};
+    // glClearBufferfv(GL_COLOR, 0, scene_texture_clear);
+    glClearColor(0.55f, 0.65f, 0.00f, 1.0f);
+    glClearDepth(1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, mem->gbuffer.depthTexture, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, mem->gbuffer.normalTexture, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, mem->gbuffer.colorTexture, 0);
+
+    glEnable(GL_DEPTH_TEST);
+
     draw_mesh(mem);
+    assert(glGetError() == GL_NO_ERROR);
 
     glDisable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -654,9 +757,12 @@ void ao_update_frame(ao_memory_t* mem)
     // glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     // glBlitFramebuffer(0, 0, mem->window_width, mem->window_height, 0, 0, mem->window_width, mem->window_height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     // glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    draw_plane(mem);
 
-	assert(glGetError() == GL_NO_ERROR);
+    draw_plane(mem);
+    assert(glGetError() == GL_NO_ERROR);
+
+    swapDepthTextures(&mem->gbuffer);
+    assert(glGetError() == GL_NO_ERROR);
 
 	++mem->frame;
 }
