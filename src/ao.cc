@@ -6,6 +6,8 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtx/rotate_vector.hpp"
 
+#define USE_TEXTURES false
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_ONLY_TGA
@@ -158,7 +160,7 @@ device_mesh_t uploadMesh(const mesh_t & mesh) {
 
 
     out.texname = mesh.texname;
-    if (!mesh.texname.empty()) {
+    if (USE_TEXTURES && !mesh.texname.empty()) {
         GLint texture_width;
         GLint texture_height;
         GLint texture_channels;
@@ -523,142 +525,117 @@ void ao_init(ao_memory_t* mem)
         uniform vec2 u_inverse_viewport_resolution;
         uniform mat4 u_inverse_projection_matrix;
 
+        int NUM_SAMPLES = 10;
+        int NUM_SPIRAL_TURNS = 10;
+
         float linearizeDepth(float exp_depth, float near, float far) {
             return  (2 * near) / (far + near - (exp_depth*2.0-1.0) * (far - near));
         }
 
+        vec2 tapLocation(int sampleNumber, float spinAngle, out float screen_space_radius){
+            float alpha = float(sampleNumber + 0.5) * (1.0 / NUM_SAMPLES);
+            float angle = alpha * (NUM_SPIRAL_TURNS * 6.28) + spinAngle;
+
+            screen_space_radius = alpha;
+            return vec2(cos(angle), sin(angle));
+        }
+
+        void getOffsetPositions(ivec2 screen_space_coord, vec2 unitOffset, float screen_space_radius, out vec3 P0, out vec3 P1) {
+            ivec2 screen_space_point = ivec2((screen_space_radius * unitOffset) + screen_space_coord);
+
+            float linear_depth0 = linearizeDepth(texelFetch(u_depth_texture_sampler, ivec3(screen_space_point, 0), 0).x, 0.1, 100.0);
+            float linear_depth1 = linearizeDepth(texelFetch(u_depth_texture_sampler, ivec3(screen_space_point, 1), 0).x, 0.1, 100.0);
+
+            vec4 farPlaneViewSpace = u_inverse_projection_matrix * vec4(screen_space_point, 1.0, 1.0);
+            farPlaneViewSpace.xyz /= farPlaneViewSpace.w;
+
+            P0 = farPlaneViewSpace.xyz * linear_depth0;
+            P1 = farPlaneViewSpace.xyz * linear_depth1;
+        }
+
+        float fallOffFunction(float vv, float vn, float epsilon) {
+            float invRadius2 = 0.5;
+            float bias = 0.01;
+            float f = max(1.0 - vv * invRadius2, 0.0);
+            return f * max((vn - bias) * inversesqrt(epsilon + vv), 0.0);
+        }
+
+        float aoValueFromPositionsAndNormal(vec3 C, vec3 n_C, vec3 Q) {
+            vec3 v = Q - C;
+            float vv = dot(v, v);
+            float vn = dot(v, n_C);
+            const float epsilon = 0.001;
+
+            return fallOffFunction(vv, vn, epsilon) * mix(1.0, max(0.0, 1.5 * n_C.z), 0.35);
+        }
+
+        float sampleAO(in ivec2 screen_space_coord, in vec3 camera_space_position, in vec3 camera_space_normal, in float screen_space_disk_radius, in int tapIndex, in float randomPatternRotationAngle, in float scale) {
+            float screen_space_radius;
+            vec2 unitOffset = tapLocation(tapIndex, randomPatternRotationAngle, screen_space_radius);
+
+            // Ensure that the taps are at least 1 pixel away
+            screen_space_radius = max(0.75, screen_space_radius * screen_space_disk_radius);
+
+            vec3 Q0, Q1;
+            getOffsetPositions(screen_space_coord, unitOffset, screen_space_radius, Q0, Q1);
+
+            float AO0 = aoValueFromPositionsAndNormal(camera_space_position, camera_space_normal, Q0);
+            float AO1 = aoValueFromPositionsAndNormal(camera_space_position, camera_space_normal, Q1);
+            return max(AO0, AO1);
+        }
+
         void main() {
-            ivec3 C = ivec3(gl_FragCoord.xy, 0);
-            float depth0 = texelFetch(u_depth_texture_sampler, C, 0).x;
+            ivec3 screen_space_coord = ivec3(gl_FragCoord.xy, 0);
+            float depth0 = texelFetch(u_depth_texture_sampler, screen_space_coord, 0).x;
             float depthLinear0 = linearizeDepth(depth0, 0.1, 100.0);
-            vec3 normal0 = texelFetch(u_normal_texture_sampler, C, 0).xyz;
-            vec3 color0 = texelFetch(u_color_texture_sampler, C, 0).xyz;
-            C.z = 1;
-            float depth1 = texelFetch(u_depth_texture_sampler, C, 0).x;
-            float depthLinear1 = linearizeDepth(depth1, 0.1, 100.0);
-            vec3 normal1 = texelFetch(u_normal_texture_sampler, C, 0).xyz;
-            vec3 color1 = texelFetch(u_color_texture_sampler, C, 0).xyz;
+            vec3 normal0 = texelFetch(u_normal_texture_sampler, screen_space_coord, 0).xyz;
+            vec3 color0 = texelFetch(u_color_texture_sampler, screen_space_coord, 0).xyz;
+            // screen_space_coord.z = 1;
+            // float depth1 = texelFetch(u_depth_texture_sampler, screen_space_coord, 0).x;
+            // float depthLinear1 = linearizeDepth(depth1, 0.1, 100.0);
+            // vec3 normal1 = texelFetch(u_normal_texture_sampler, screen_space_coord, 0).xyz;
+            // vec3 color1 = texelFetch(u_color_texture_sampler, screen_space_coord, 0).xyz;
 
             vec2 positionScreenSpace = (gl_FragCoord.xy * u_inverse_viewport_resolution) * 2.0 - 1.0;
             vec4 farPlaneViewSpace = u_inverse_projection_matrix * vec4(positionScreenSpace, 1.0, 1.0);
             farPlaneViewSpace.xyz /= farPlaneViewSpace.w;
 			// NOTE(lars): these are camera space positions, thanks Angela!
             vec3 position0 = farPlaneViewSpace.xyz * depthLinear0;
-            vec3 position1 = farPlaneViewSpace.xyz * depthLinear1;
+            // vec3 position1 = farPlaneViewSpace.xyz * depthLinear1;
 
-            output_color = vec4(color1, 1.0);
+            float position0z = depthLinear0 * -farPlaneViewSpace.z;
+            // float position1z = depthLinear1 * -farPlaneViewSpace.z;
+
+            float projScale = 500.0;
+            float radius = 1.0;
+            float screen_space_disk_radius = projScale * radius / position0z;
+
+            float min_disk_radius = 3.0;
+            if (screen_space_disk_radius <= min_disk_radius) {
+                // bail
+                output_color = vec4(1.0, 0.0, 1.0, 1.0);
+                return;
+            }
+
+            float randomPatternRotationAngle = (((3 * screen_space_coord.x) ^ (screen_space_coord.y + screen_space_coord.x * screen_space_coord.y))) * 10;
+
+            float sum = 0.0;
+            for (int i = 0; i < NUM_SAMPLES; ++i) {
+                sum += sampleAO(screen_space_coord.xy, position0, normal0, screen_space_disk_radius, i, randomPatternRotationAngle, 1);
+            }
+
+            float intensity = 1.0;
+            float A = pow(max(0.0, 1.0 - sqrt(sum * (3.0 / NUM_SAMPLES))), intensity);
+
+            // Fade in as the radius reaches 2 pixels
+            float visibility = mix(1.0, A, clamp(screen_space_disk_radius - min_disk_radius, 0.0, 1.0));
+
+            output_color = vec4(tapLocation(5, randomPatternRotationAngle, screen_space_disk_radius), 0.0, 1.0);
         }
     )";
 
-    char* ao_fragment_shader_src2 = (char*)R"(
-        #version 410
-        layout(location = 0) out vec4 output_color;
-        uniform sampler2DArray u_depth_texture_sampler;
-        uniform sampler2DArray u_normal_texture_sampler;
-        uniform sampler2DArray u_color_texture_sampler;
-        uniform vec2 u_inverse_viewport_resolution;
-        uniform mat4 u_inverse_projection_matrix;
 
-		int NUM_SAMPLES = 10;
-		int NUM_SPIRAL_TURNS = 10;
-
-        float linearizeDepth(float exp_depth, float near, float far) {
-            return  (2 * near) / (far + near - (exp_depth*2.0-1.0) * (far - near));
-        }
-
-		vec2 tapLocation(int sampleNumber, float spinAngle, out float screen_space_radius){
-			float alpha = float(sampleNumber + 0.5) * (1.0 / NUM_SAMPLES);
-			float angle = alpha * (NUM_SPIRAL_TURNS * 6.28) + spinAngle;
-
-			screen_space_radius = alpha;
-			return vec2(cos(angle), sin(angle));
-		}
-
-		void getOffsetPositions(ivec2 screen_space_coord, vec2 unitOffset, float screen_space_radius, out vec3 P0, out vec3 P1) {
-			ivec2 screen_space_point = ivec2((screen_space_radius * unitOffset) + screen_space_coord);
-
-            float linear_depth0 = linearizeDepth(texelFetch(u_depth_texture_sampler, ivec3(screen_space_point, 0.0), 0).x, 0.1, 100.0);
-            float linear_depth1 = linearizeDepth(texelFetch(u_depth_texture_sampler, ivec3(screen_space_point, 1.0), 0).x, 0.1, 100.0);
-
-            vec4 farPlaneViewSpace = u_inverse_projection_matrix * vec4(screen_space_point, 1.0, 1.0);
-            farPlaneViewSpace.xyz /= farPlaneViewSpace.w;
-
-			P0 = farPlaneViewSpace.xyz * linear_depth0;
-			P1 = farPlaneViewSpace.xyz * linear_depth1;
-		}
-
-		float fallOffFunction(float vv, float vn, float epsilon) {
-			float invRadius2 = 0.5;
-			float bias = 0.01;
-			float f = max(1.0 - vv * invRadius2, 0.0);
-			return f * max((vn - bias) * inversesqrt(epsilon + vv), 0.0);
-		}
-
-		float aoValueFromPositionsAndNormal(vec3 C, vec3 n_C, vec3 Q) {
-			vec3 v = Q - C;
-			float vv = dot(v, v);
-			float vn = dot(v, n_C);
-			const float epsilon = 0.001;
-
-			return fallOffFunction(vv, vn, epsilon) * mix(1.0, max(0.0, 1.5 * n_C.z), 0.35);
-		}
-
-		float sampleAO(in ivec2 screen_space_coord, in vec3 camera_space_position, in vec3 camera_space_normal, in float screen_space_disk_radius, in int tapIndex, in float randomPatternRotationAngle, in float scale) {
-			float screen_space_radius;
-			vec2 unitOffset = tapLocation(tapIndex, randomPatternRotationAngle, screen_space_radius);
-
-			// Ensure that the taps are at least 1 pixel away
-			screen_space_radius = max(0.75, screen_space_radius * screen_space_disk_radius);
-
-			vec3 Q0, Q1;
-			getOffsetPositions(screen_space_coord, unitOffset, screen_space_radius, Q0, Q1);
-
-			float AO0 = aoValueFromPositionsAndNormal(camera_space_position, camera_space_normal, Q0);
-			float AO1 = aoValueFromPositionsAndNormal(camera_space_position, camera_space_normal, Q1);
-			return max(AO0, AO1);
-		}
-
-        void main() {
-			ivec3 screen_space_coord = ivec3(gl_FragCoord.xy, 0);
-            float linear_depth = linearizeDepth(texelFetch(u_depth_texture_sampler, screen_space_coord, 0).x, 0.1, 100.0);
-            vec3 camera_space_normal = texelFetch(u_normal_texture_sampler, screen_space_coord, 0).xyz;
-            vec3 camera_space_color = texelFetch(u_color_texture_sampler, screen_space_coord, 0).xyz;
-
-            vec2 positionScreenSpace = (gl_FragCoord.xy * u_inverse_viewport_resolution) * 2.0 - 1.0;
-            vec4 farPlaneViewSpace = u_inverse_projection_matrix * vec4(positionScreenSpace, 1.0, 1.0);
-            farPlaneViewSpace.xyz /= farPlaneViewSpace.w;
-
-            vec3 camera_space_position = farPlaneViewSpace.xyz * linear_depth;
-
-			float randomPatternRotationAngle = (((3 * screen_space_coord.x) ^ (screen_space_coord.y + screen_space_coord.x * screen_space_coord.y))) * 10;
-
-			float projScale = 500.0;
-			float radius = 1.0;
-			float screen_space_disk_radius = -projScale * radius / camera_space_position.z;
-
-			float min_disk_radius = 3.0;
-			if (screen_space_disk_radius <= min_disk_radius) {
-				// bail
-				output_color = vec4(1.0, 0.0, 1.0, 1.0);
-				return;
-			}
-
-			float sum = 0.0;
-			for (int i = 0; i < NUM_SAMPLES; ++i) {
-				sum += sampleAO(screen_space_coord.xy, camera_space_position, camera_space_normal, screen_space_disk_radius, i, randomPatternRotationAngle, 1);
-			}
-
-			float intensity = 1.0;
-			float A = pow(max(0.0, 1.0 - sqrt(sum * (3.0 / NUM_SAMPLES))), intensity);
-
-			// Fade in as the radius reaches 2 pixels
-			float visibility = mix(1.0, A, clamp(screen_space_disk_radius - min_disk_radius, 0.0, 1.0));
-
-			output_color = vec4(camera_space_position, 1.0);
-        }
-    )";
-
-    GLuint ao_program = gl_create_shader_program(ao_vertex_shader_src, NULL, ao_fragment_shader_src2);
+    GLuint ao_program = gl_create_shader_program(ao_vertex_shader_src, NULL, ao_fragment_shader_src);
     assert(ao_program != 0);
 
     GLint ao_depth_texture_sampler_location = glGetUniformLocation(ao_program, "u_depth_texture_sampler");
@@ -776,9 +753,9 @@ void draw_mesh(ao_memory_t* mem) {
     glDrawBuffers(2, draw_buffers);
 
     for(unsigned int i=0; i<draw_meshes.size(); i++){
-        glBindTexture(GL_TEXTURE_2D, draw_meshes[i].texture);
+        if (USE_TEXTURES) glBindTexture(GL_TEXTURE_2D, draw_meshes[i].texture);
         glUniform3fv(mem->mesh_uniform_color_location, 1, &(draw_meshes[i].color[0]));
-        glUniform1i(mem->mesh_uniform_texture_assigned_color_location, !draw_meshes[i].texname.empty());
+        glUniform1i(mem->mesh_uniform_texture_assigned_color_location, USE_TEXTURES ? !draw_meshes[i].texname.empty() : false);
 
         glBindVertexArray(draw_meshes[i].vertex_array);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, draw_meshes[i].vbo_indices);
@@ -790,6 +767,7 @@ void draw_mesh(ao_memory_t* mem) {
     glUniformMatrix4fv(mem->mesh_uniform_mv_matrix_back_location, 1, GL_FALSE, &mv_matrix[0][0]);
 
     glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     glUseProgram(0);
 }
 
@@ -860,6 +838,10 @@ void ao_update_frame(ao_memory_t* mem)
 
     glDisable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    glClearColor(0.55f, 0.00f, 0.85f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    assert(glGetError() == GL_NO_ERROR);
 
     // glBindFramebuffer(GL_READ_FRAMEBUFFER, mem->gbuffer.fb);
     // glReadBuffer(GL_COLOR_ATTACHMENT3);
