@@ -473,12 +473,7 @@ void ao_init(ao_memory_t* mem)
                 discard;
             }
 
-            // output_normal = vec4(v_position, 1.0);
-            // if (v_layer != 0.0) {
-            //     output_normal = vec4(ssPositionChange, 0.0, 1.0);
-            // } else {
-                output_normal = vec4(normalize(v_normal), 1.0);
-            // }
+            output_normal = vec4(normalize(v_normal), 1.0);
             vec3 color = u_texture_assigned_color ? texture(u_texture_sampler, v_uv_coord).rgb : u_color;
             output_color = vec4(color, 1.0);
             // discard;
@@ -542,11 +537,12 @@ void ao_init(ao_memory_t* mem)
 
         void getOffsetPositions(ivec2 screen_space_coord, vec2 unitOffset, float screen_space_radius, out vec3 P0, out vec3 P1) {
             ivec2 screen_space_point = ivec2((screen_space_radius * unitOffset) + screen_space_coord);
+            vec2 positionScreenSpace = (screen_space_point * u_inverse_viewport_resolution) * 2.0 - 1.0;
 
             float linear_depth0 = linearizeDepth(texelFetch(u_depth_texture_sampler, ivec3(screen_space_point, 0), 0).x, 0.1, 100.0);
             float linear_depth1 = linearizeDepth(texelFetch(u_depth_texture_sampler, ivec3(screen_space_point, 1), 0).x, 0.1, 100.0);
 
-            vec4 farPlaneViewSpace = u_inverse_projection_matrix * vec4(screen_space_point, 1.0, 1.0);
+            vec4 farPlaneViewSpace = u_inverse_projection_matrix * vec4(positionScreenSpace, 1.0, 1.0);
             farPlaneViewSpace.xyz /= farPlaneViewSpace.w;
 
             P0 = farPlaneViewSpace.xyz * linear_depth0;
@@ -590,9 +586,9 @@ void ao_init(ao_memory_t* mem)
             float depthLinear0 = linearizeDepth(depth0, 0.1, 100.0);
             vec3 normal0 = texelFetch(u_normal_texture_sampler, screen_space_coord, 0).xyz;
             vec3 color0 = texelFetch(u_color_texture_sampler, screen_space_coord, 0).xyz;
-            // screen_space_coord.z = 1;
-            // float depth1 = texelFetch(u_depth_texture_sampler, screen_space_coord, 0).x;
-            // float depthLinear1 = linearizeDepth(depth1, 0.1, 100.0);
+            screen_space_coord.z = 1;
+            float depth1 = texelFetch(u_depth_texture_sampler, screen_space_coord, 0).x;
+            float depthLinear1 = linearizeDepth(depth1, 0.1, 100.0);
             // vec3 normal1 = texelFetch(u_normal_texture_sampler, screen_space_coord, 0).xyz;
             // vec3 color1 = texelFetch(u_color_texture_sampler, screen_space_coord, 0).xyz;
 
@@ -601,10 +597,10 @@ void ao_init(ao_memory_t* mem)
             farPlaneViewSpace.xyz /= farPlaneViewSpace.w;
 			// NOTE(lars): these are camera space positions, thanks Angela!
             vec3 position0 = farPlaneViewSpace.xyz * depthLinear0;
-            // vec3 position1 = farPlaneViewSpace.xyz * depthLinear1;
+            vec3 position1 = farPlaneViewSpace.xyz * depthLinear1;
 
             float position0z = depthLinear0 * -farPlaneViewSpace.z;
-            // float position1z = depthLinear1 * -farPlaneViewSpace.z;
+            float position1z = depthLinear1 * -farPlaneViewSpace.z;
 
             float projScale = 500.0;
             float radius = 1.0;
@@ -630,7 +626,8 @@ void ao_init(ao_memory_t* mem)
             // Fade in as the radius reaches 2 pixels
             float visibility = mix(1.0, A, clamp(screen_space_disk_radius - min_disk_radius, 0.0, 1.0));
 
-            output_color = vec4(tapLocation(5, randomPatternRotationAngle, screen_space_disk_radius), 0.0, 1.0);
+            output_color = vec4(visibility * color0, 1.0);
+            // output_color = vec4(vec3(position1z - position0z), 1.0);
         }
     )";
 
