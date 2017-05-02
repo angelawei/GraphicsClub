@@ -1,0 +1,266 @@
+#define PI 3.14159265359
+
+float seed = 0.0;
+float rand() { return fract(sin(seed++)*43758.5453123); }
+
+struct Ray {
+  vec3 origin;
+  vec3 direction;
+};
+
+#define DIFFUSE 0
+#define SPECULAR 1
+#define REFRACTIVE 2
+
+struct Sphere {
+  vec3 center;
+  float radius;
+  vec3 color;
+  vec3 emission;
+  int reflectionType; // DIFFUSE, SPECULAR, REFRACTIVE
+};
+
+#define EPSILON 0.001
+float sphereIntersect(const in Sphere sphere, const in Ray ray) {
+  // Solve for t (distance from ray origin)
+  // t^2*d.d + 2*t*(o-p).d + (o-p).(o-p)-R^2 = 0
+
+  vec3 originToPosition = sphere.center - ray.origin;
+  float b = dot(originToPosition, ray.direction);
+  float determinant = (b * b) - dot(originToPosition, originToPosition) + sphere.radius * sphere.radius;
+
+  if (determinant < 0.0) return -1.0; // ray misses
+
+  determinant = sqrt(determinant);
+
+  float t = 0.0;
+  if ((t = b - determinant) > EPSILON)
+    return t;
+  else if ((t = b + determinant) > EPSILON)
+    return t;
+  return -1.0;
+}
+
+#define NUM_OBJECTS 9
+Sphere objects[NUM_OBJECTS] = Sphere[NUM_OBJECTS] (
+  // left wall
+  Sphere(
+    vec3(1e5+1.0,40.8,81.6),
+    1e5,
+    vec3(0.75,0.25,0.25),
+    vec3(0.0),
+    DIFFUSE
+  ),
+  // right wall
+  Sphere(
+    vec3(-1e5+99.0,40.8,81.6),
+    1e5,
+    vec3(0.25,0.25,0.75),
+    vec3(0.0),
+    DIFFUSE
+  ),
+  // back wall
+  Sphere(
+    vec3(50.0,40.8, 1e5),
+    1e5,
+    vec3(0.75),
+    vec3(0.0),
+    DIFFUSE
+  ),
+  // front wall
+  Sphere(
+    vec3(50.0,40.8,-1e5+170.0),
+    1e5,
+    vec3(0.0),
+    vec3(0.0),
+    DIFFUSE
+  ),
+  // bottom wall
+  Sphere(
+    vec3(50.0, 1e5, 81.6),
+    1e5,
+    vec3(0.75),
+    vec3(0.0),
+    DIFFUSE
+  ),
+  // top wall
+  Sphere(
+    vec3(50.0,-1e5+81.6,81.6),
+    1e5,
+    vec3(0.75),
+    vec3(0.0),
+    DIFFUSE
+  ),
+  // mirror ball
+  Sphere(
+    vec3(27.0,16.5,47.0),
+    16.5,
+    vec3(1.0),
+    vec3(0.0),
+    SPECULAR
+  ),
+  // glass ball
+  Sphere(
+    vec3(73.0,16.5,78.0),
+    16.5,
+    vec3(0.8, 1.0, 0.95),
+    vec3(0.0),
+    REFRACTIVE
+  ),
+  // top light
+  Sphere(
+    vec3(50.0,681.33,81.6),
+    600.0,
+    vec3(0.0),
+    vec3(12.0),
+    DIFFUSE
+  )
+);
+
+#define INFINITY 1e10
+bool sceneIntersect(const in Ray ray, out float closestDist, out int closestId, const in int selfId) {
+  float dist;
+  closestDist = INFINITY;
+  closestId = -1;
+
+  for(int i = 0; i < NUM_OBJECTS; i++) {
+    dist = sphereIntersect(objects[i], ray);
+
+    if (i != selfId && dist > 0.0 && dist < closestDist) {
+      closestId = i;
+      closestDist = dist;
+    }
+  }
+
+  return closestDist < INFINITY;
+}
+
+#define SAMPLES 1
+#define MAX_DEPTH 5
+#define MIN_DEPTH 3
+
+vec3 radiance(const in Ray cameraRay, const in vec2 randSeed) {
+  Ray ray = cameraRay;
+  int depth = 0;
+
+  float hitDist;
+  int hitId;
+  bool hit;
+
+  vec3 accumulatedColor = vec3(0.0);
+  vec3 accumulatedReflectance = vec3(1.0);
+
+  for (int depth = 0; depth < MAX_DEPTH; ++depth) {
+    hit = sceneIntersect(ray, hitDist, hitId, hitId);
+    if (!hit) break;
+
+    Sphere hitObject = objects[hitId];
+    vec3 hitReflectance = hitObject.color;
+
+    accumulatedColor += hitObject.emission * accumulatedReflectance;
+
+    // russian roulette
+    float maxReflectance = max(max(hitReflectance.r, hitReflectance.g), hitReflectance.b);
+    if (depth > MIN_DEPTH) {
+      if (rand() < maxReflectance) {
+        hitReflectance /= maxReflectance;
+      } else {
+        break;
+      }
+    }
+
+    accumulatedReflectance *= hitReflectance;
+
+    vec3 hitPosition = ray.origin + ray.direction * hitDist;
+    vec3 hitNormal = normalize(hitPosition - hitObject.center);
+
+    float dDotN = -dot(hitNormal, ray.direction);
+    float into = sign(dDotN);
+    dDotN = abs(dDotN);
+
+    if (hitObject.reflectionType == DIFFUSE) {
+      float r1 = rand();
+      float r2 = rand();
+
+      float rPhi = 2.0 * PI * r1;
+      float rSinPhi = sin(rPhi);
+      float rCosPhi = cos(rPhi);
+      float rSinTheta = sqrt(r2);
+      float rCosTheta = sqrt(1.0 - r2);
+
+      vec3 w = normalize(hitNormal * into);
+      vec3 u = normalize(cross(w.yzx, w));
+      // vec3 u = cross(fabs(w.x) > 0.1 ? vec3(0, 1, 0) : vec3(1, 0, 0), w);
+      vec3 v = cross(w, u);
+
+      vec3 diffuseDirection = (u * rCosPhi + v * rSinPhi) * rSinTheta + w * rCosTheta;
+
+      ray = Ray(hitPosition, diffuseDirection);
+    } else if (hitObject.reflectionType == SPECULAR) {
+      ray = Ray(hitPosition, reflect(ray.direction, hitNormal));
+    } else {
+      float iorAir = 1.0;
+      float iorGlass = 1.5;
+      float ratioIor = (into > 0.0) ? iorAir / iorGlass : iorGlass / iorAir;
+      float cos2t = 1.0 - ratioIor * ratioIor * (1.0 - dDotN * dDotN);
+
+      ray = Ray(hitPosition, reflect(ray.direction, hitNormal));
+      if (cos2t < 0.0) continue;  // Total internal reflection
+
+      vec3 refractedDirection = normalize(ray.direction * ratioIor - into * hitNormal * (dDotN * ratioIor + sqrt(cos2t)));
+
+      float a = iorGlass - iorAir;
+      float b = iorGlass + iorAir;
+      float R0 = a * a / (b * b); // reflection coefficient at normal incidence
+      float c = 1.0 - ((into > 0.0) ? dDotN : dot(refractedDirection, hitNormal)); // 1 - cos(theta)
+      float reflectionCoeff = R0 + (1.0 - R0) * c*c*c*c*c; // Schlick's approximation
+
+      // if branching it could have been done without probability:
+      // radianceReflection * reflectionCoeff + radianceRefraction * (1 - reflectionCoeff)
+
+      float probability = 0.25 + 0.5 * reflectionCoeff;
+      float reflectionProb = reflectionCoeff / probability;
+      float refractionProb = (1.0 - reflectionCoeff) / (1.0 - probability);
+      if (rand() < probability) {
+        accumulatedReflectance *= reflectionProb;
+      } else {
+        accumulatedReflectance *= refractionProb;
+        ray = Ray(hitPosition, refractedDirection);
+      }
+    }
+  }
+
+  return accumulatedColor;
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+  seed = iGlobalTime + iResolution.y * fragCoord.x / iResolution.x + fragCoord.y / iResolution.y;
+
+  vec2 st = fragCoord.xy / iResolution.xy;
+  vec2 uv = 2.0 * st - 1.0;
+
+  Ray camera = Ray(
+    vec3(50.0, 40.8, 169.0),
+    normalize(vec3(0, -0.8, -87.4))
+  );
+
+  vec3 cx = vec3(1.0, 0.0, 0.0);
+  vec3 cy = normalize(cross(cx, camera.direction));
+  cx = cross(camera.direction, cy);
+
+  Ray pixelRay = Ray(
+    camera.origin,
+    normalize(camera.direction + 0.53135 * (iResolution.x/iResolution.y * uv.x * cx + uv.y * cy))
+  );
+
+  // vec3 color = vec3(0.);
+  // for (int i = 0; i < SAMPLES; ++i) {
+  //   color += radiance(pixelRay, vec2(0.0));
+  // }
+  // fragColor = vec4(pow(clamp(color/float(SAMPLES), 0., 1.), vec3(1./2.2)), 1.);
+
+  // Moving average / Multipass
+  vec3 color = texture(iChannel0, st).rgb * float(iFrame);
+  color += radiance(pixelRay, vec2(0.0));
+  fragColor = vec4(color/float(iFrame + 1), 1.);
+}
